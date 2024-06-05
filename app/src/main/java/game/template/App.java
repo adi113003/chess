@@ -1,7 +1,6 @@
 package game.template;
 
 import java.net.URL;
-
 import javafx.application.Application;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
@@ -26,6 +25,7 @@ public class App extends Application
 
     private int selectedRow = -1;
     private int selectedCol = -1;
+    private Player currentPlayer = Player.WHITE;  // Track the current player
 
     @Override
     public void start(Stage primaryStage) throws Exception
@@ -132,24 +132,42 @@ public class App extends Application
 
     private void handleMouseClick(MouseEvent event, int row, int col)
     {
-        if (selectedRow == -1 && selectedCol == -1) {
-            // First click: select piece
-            if (grid[row][col].getChildren().stream().anyMatch(child -> child instanceof ImageView)) {
-                selectedRow = row;
-                selectedCol = col;
-            }
-        } else {
-            // Second click: move piece
-            if (isValidMove(selectedRow, selectedCol, row, col)) {
-                movePiece(selectedRow, selectedCol, row, col);
+        boolean validMove = false;
+
+        while (!validMove) {
+            if (selectedRow == -1 && selectedCol == -1) {
+                // First click: select piece
+                if (grid[row][col].getChildren().stream().anyMatch(child -> child instanceof ImageView)) {
+                    ImageView piece = (ImageView) grid[row][col].getChildren().stream()
+                        .filter(child -> child instanceof ImageView).findFirst().orElse(null);
+                    if (piece != null) {
+                        String url = piece.getImage().getUrl();
+                        if ((currentPlayer == Player.WHITE && url.contains("/w")) || (currentPlayer == Player.BLACK && url.contains("/b"))) {
+                            selectedRow = row;
+                            selectedCol = col;
+                        } else {
+                            showAlert("Not Your Turn", "It's not your turn to move this piece.");
+                        }
+                    }
+                }
             } else {
-                showAlert("Invalid Move", "The move is not valid according to chess rules.");
+                // Second click: move piece
+                if (isValidMove(selectedRow, selectedCol, row, col)) {
+                    movePiece(selectedRow, selectedCol, row, col);
+                    switchTurn();
+                    validMove = true;
+                } else {
+                    showAlert("Invalid Move", "The move is not valid according to chess rules.");
+                }
+                selectedRow = -1;
+                selectedCol = -1;
             }
-            selectedRow = -1;
-            selectedCol = -1;
         }
     }
 
+    private void switchTurn() {
+        currentPlayer = (currentPlayer == Player.WHITE) ? Player.BLACK : Player.WHITE;
+    }
     private boolean isValidMove(int fromRow, int fromCol, int toRow, int toCol)
     {
         if (fromRow == toRow && fromCol == toCol) {
@@ -333,7 +351,12 @@ public class App extends Application
             drawInitialBoard();
         });
 
-        menuBar.getMenus().add(fileMenu);
+        Menu gameModeMenu = new Menu("Game Mode");
+        addMenuItem(gameModeMenu, "Play Against Human", () -> {
+            drawInitialBoard();
+        });
+
+        menuBar.getMenus().addAll(fileMenu, gameModeMenu);
 
         return menuBar;
     }
