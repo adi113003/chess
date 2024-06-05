@@ -1,6 +1,10 @@
 package game.template;
 
 import java.net.URL;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
+
 import javafx.application.Application;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
@@ -8,6 +12,7 @@ import javafx.scene.control.Alert.AlertType;
 import javafx.scene.control.Menu;
 import javafx.scene.control.MenuBar;
 import javafx.scene.control.MenuItem;
+import javafx.scene.control.TextArea;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.GridPane;
@@ -16,8 +21,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.shape.Rectangle;
 import javafx.stage.Stage;
 
-public class App extends Application
-{
+public class App extends Application {
     private static final int SIZE = 8;
     private static final int SQUARE_SIZE = 70;
     private VBox root;
@@ -26,10 +30,12 @@ public class App extends Application
     private int selectedRow = -1;
     private int selectedCol = -1;
     private Player currentPlayer = Player.WHITE;  // Track the current player
+    private boolean playAgainstAI = false;  // Indicate if playing against AI
+    private List<String> moveHistory = new ArrayList<>();  // Track move history
+    private TextArea moveHistoryArea;  // TextArea to display move history
 
     @Override
-    public void start(Stage primaryStage) throws Exception
-    {
+    public void start(Stage primaryStage) throws Exception {
         root = new VBox();
 
         root.getChildren().add(createMenuBar());
@@ -39,10 +45,13 @@ public class App extends Application
         
         root.getChildren().add(gridPane);
 
-        for (int row = 0; row < SIZE; row++)
-        {
-            for (int col = 0; col < SIZE; col++)
-            {
+        moveHistoryArea = new TextArea();
+        moveHistoryArea.setEditable(false);
+        moveHistoryArea.setPrefHeight(100);
+        root.getChildren().add(moveHistoryArea);
+
+        for (int row = 0; row < SIZE; row++) {
+            for (int col = 0; col < SIZE; col++) {
                 StackPane cell = createCell(row, col);
                 grid[row][col] = cell;
                 gridPane.add(cell, col, row);
@@ -66,8 +75,7 @@ public class App extends Application
         drawInitialBoard();
     }
 
-    private StackPane createCell(int row, int col)
-    {
+    private StackPane createCell(int row, int col) {
         Rectangle rect = new Rectangle(SQUARE_SIZE, SQUARE_SIZE);
         if ((row + col) % 2 == 0) { 
             rect.getStyleClass().add("white-square");
@@ -82,19 +90,15 @@ public class App extends Application
         return cell;
     }
 
-    private void clearBoard()
-    {
-        for (int row = 0; row < SIZE; row++)
-        {
-            for (int col = 0; col < SIZE; col++)
-            {
+    private void clearBoard() {
+        for (int row = 0; row < SIZE; row++) {
+            for (int col = 0; col < SIZE; col++) {
                 grid[row][col].getChildren().removeIf(child -> child instanceof ImageView);
             }
         }
     }
 
-    private void drawInitialBoard()
-    {
+    private void drawInitialBoard() {
         clearBoard();
         
         // Place pawns
@@ -128,48 +132,83 @@ public class App extends Application
         // Place kings
         placePiece(Player.WHITE, ChessPiece.KING, 7, 4);
         placePiece(Player.BLACK, ChessPiece.KING, 0, 4);
+        
+        moveHistory.clear();
+        updateMoveHistoryDisplay();
     }
 
-    private void handleMouseClick(MouseEvent event, int row, int col)
-    {
-        boolean validMove = false;
+    private void handleMouseClick(MouseEvent event, int row, int col) {
+        if (currentPlayer == Player.BLACK && playAgainstAI) {
+            return; // Ignore clicks when it's AI's turn
+        }
 
-        while (!validMove) {
-            if (selectedRow == -1 && selectedCol == -1) {
-                // First click: select piece
-                if (grid[row][col].getChildren().stream().anyMatch(child -> child instanceof ImageView)) {
-                    ImageView piece = (ImageView) grid[row][col].getChildren().stream()
-                        .filter(child -> child instanceof ImageView).findFirst().orElse(null);
-                    if (piece != null) {
-                        String url = piece.getImage().getUrl();
-                        if ((currentPlayer == Player.WHITE && url.contains("/w")) || (currentPlayer == Player.BLACK && url.contains("/b"))) {
-                            selectedRow = row;
-                            selectedCol = col;
-                        } else {
-                            showAlert("Not Your Turn", "It's not your turn to move this piece.");
-                        }
+        if (selectedRow == -1 && selectedCol == -1) {
+            // First click: select piece
+            if (grid[row][col].getChildren().stream().anyMatch(child -> child instanceof ImageView)) {
+                ImageView piece = (ImageView) grid[row][col].getChildren().stream()
+                    .filter(child -> child instanceof ImageView).findFirst().orElse(null);
+                if (piece != null) {
+                    String url = piece.getImage().getUrl();
+                    if ((currentPlayer == Player.WHITE && url.contains("/w")) || (currentPlayer == Player.BLACK && url.contains("/b"))) {
+                        selectedRow = row;
+                        selectedCol = col;
+                    } else {
+                        showAlert("Not Your Turn", "It's not your turn to move this piece.");
                     }
                 }
-            } else {
-                // Second click: move piece
-                if (isValidMove(selectedRow, selectedCol, row, col)) {
-                    movePiece(selectedRow, selectedCol, row, col);
-                    switchTurn();
-                    validMove = true;
-                } else {
-                    showAlert("Invalid Move", "The move is not valid according to chess rules.");
-                }
-                selectedRow = -1;
-                selectedCol = -1;
             }
+        } else {
+            // Second click: move piece
+            if (isValidMove(selectedRow, selectedCol, row, col)) {
+                movePiece(selectedRow, selectedCol, row, col);
+                switchTurn();
+            } else {
+                showAlert("Invalid Move", "The move is not valid according to chess rules.");
+            }
+            selectedRow = -1;
+            selectedCol = -1;
         }
     }
 
     private void switchTurn() {
         currentPlayer = (currentPlayer == Player.WHITE) ? Player.BLACK : Player.WHITE;
+
+        if (currentPlayer == Player.BLACK && playAgainstAI) {
+            aiMove();
+            currentPlayer = Player.WHITE;
+        }
     }
-    private boolean isValidMove(int fromRow, int fromCol, int toRow, int toCol)
-    {
+
+    private void aiMove() {
+        List<int[]> validMoves = new ArrayList<>();
+        
+        // Collect all valid moves for AI
+        for (int row = 0; row < SIZE; row++) {
+            for (int col = 0; col < SIZE; col++) {
+                if (grid[row][col].getChildren().stream().anyMatch(child -> child instanceof ImageView)) {
+                    ImageView piece = (ImageView) grid[row][col].getChildren().stream()
+                        .filter(child -> child instanceof ImageView).findFirst().orElse(null);
+                    if (piece != null && piece.getImage().getUrl().contains("/b")) {
+                        for (int toRow = 0; toRow < SIZE; toRow++) {
+                            for (int toCol = 0; toCol < SIZE; toCol++) {
+                                if (isValidMove(row, col, toRow, toCol)) {
+                                    validMoves.add(new int[]{row, col, toRow, toCol});
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!validMoves.isEmpty()) {
+            Random rand = new Random();
+            int[] move = validMoves.get(rand.nextInt(validMoves.size()));
+            movePiece(move[0], move[1], move[2], move[3]);
+        }
+    }
+
+    private boolean isValidMove(int fromRow, int fromCol, int toRow, int toCol) {
         if (fromRow == toRow && fromCol == toCol) {
             return false; // Can't move to the same square
         }
@@ -210,8 +249,7 @@ public class App extends Application
         }
     }
 
-    private boolean validatePawnMove(int fromRow, int fromCol, int toRow, int toCol, Player player)
-    {
+    private boolean validatePawnMove(int fromRow, int fromCol, int toRow, int toCol, Player player) {
         int direction = (player == Player.WHITE) ? -1 : 1;
         int startRow = (player == Player.WHITE) ? 6 : 1;
 
@@ -229,8 +267,7 @@ public class App extends Application
         return false;
     }
 
-    private boolean validateRookMove(int fromRow, int fromCol, int toRow, int toCol)
-    {
+    private boolean validateRookMove(int fromRow, int fromCol, int toRow, int toCol) {
         if (fromRow != toRow && fromCol != toCol) {
             return false;
         }
@@ -252,16 +289,14 @@ public class App extends Application
         return true;
     }
 
-    private boolean validateKnightMove(int fromRow, int fromCol, int toRow, int toCol)
-    {
+    private boolean validateKnightMove(int fromRow, int fromCol, int toRow, int toCol) {
         int rowDiff = Math.abs(fromRow - toRow);
         int colDiff = Math.abs(fromCol - toCol);
 
         return (rowDiff == 2 && colDiff == 1) || (rowDiff == 1 && colDiff == 2);
     }
 
-    private boolean validateBishopMove(int fromRow, int fromCol, int toRow, int toCol)
-    {
+    private boolean validateBishopMove(int fromRow, int fromCol, int toRow, int toCol) {
         if (Math.abs(fromRow - toRow) != Math.abs(fromCol - toCol)) {
             return false;
         }
@@ -283,23 +318,19 @@ public class App extends Application
         return true;
     }
 
-    private boolean validateQueenMove(int fromRow, int fromCol, int toRow, int toCol)
-    {
+    private boolean validateQueenMove(int fromRow, int fromCol, int toRow, int toCol) {
         return validateRookMove(fromRow, fromCol, toRow, toCol) || validateBishopMove(fromRow, fromCol, toRow, toCol);
     }
 
-    private boolean validateKingMove(int fromRow, int fromCol, int toRow, int toCol)
-    {
+    private boolean validateKingMove(int fromRow, int fromCol, int toRow, int toCol) {
         return Math.abs(fromRow - toRow) <= 1 && Math.abs(fromCol - toCol) <= 1;
     }
 
-    private boolean isEmpty(int row, int col)
-    {
+    private boolean isEmpty(int row, int col) {
         return grid[row][col].getChildren().stream().noneMatch(child -> child instanceof ImageView);
     }
 
-    private boolean isEnemyPiece(int row, int col, Player player)
-    {
+    private boolean isEnemyPiece(int row, int col, Player player) {
         ImageView piece = (ImageView) grid[row][col].getChildren().stream()
                 .filter(child -> child instanceof ImageView).findFirst().orElse(null);
 
@@ -311,19 +342,29 @@ public class App extends Application
         return (player == Player.WHITE && url.contains("/b")) || (player == Player.BLACK && url.contains("/w"));
     }
 
-    private void movePiece(int fromRow, int fromCol, int toRow, int toCol)
-    {
+    private void movePiece(int fromRow, int fromCol, int toRow, int toCol) {
         ImageView piece = (ImageView) grid[fromRow][fromCol].getChildren().stream()
                 .filter(child -> child instanceof ImageView).findFirst().orElse(null);
 
         if (piece != null) {
             grid[toRow][toCol].getChildren().add(piece);
             grid[fromRow][fromCol].getChildren().remove(piece);
+            logMove(fromRow, fromCol, toRow, toCol, piece);  // Log the move
         }
     }
 
-    private void placePiece(Player player, ChessPiece piece, int row, int col)
-    {
+    private void logMove(int fromRow, int fromCol, int toRow, int toCol, ImageView piece) {
+        String pieceType = piece.getImage().getUrl().substring(piece.getImage().getUrl().lastIndexOf('/') + 1, piece.getImage().getUrl().lastIndexOf('.'));
+        String move = String.format("%s: %s (%d, %d) -> (%d, %d)", currentPlayer, pieceType, fromRow, fromCol, toRow, toCol);
+        moveHistory.add(move);
+        updateMoveHistoryDisplay();
+    }
+
+    private void updateMoveHistoryDisplay() {
+        moveHistoryArea.setText(String.join("\n", moveHistory));
+    }
+
+    private void placePiece(Player player, ChessPiece piece, int row, int col) {
         String imageName = (player == Player.WHITE ? "w" : "b") + piece.toString().toLowerCase() + ".png";
         ImageView image = loadImage(imageName);
         grid[row][col].getChildren().add(image);
@@ -331,17 +372,15 @@ public class App extends Application
         image.setFitHeight(SQUARE_SIZE);
     }
 
-    private ImageView loadImage(String name)
-    {
+    private ImageView loadImage(String name) {
         return new ImageView(getClass().getResource("/assets/" + name).toExternalForm());
     }
 
-    private MenuBar createMenuBar()
-    {
+    private MenuBar createMenuBar() {
         MenuBar menuBar = new MenuBar();
-    	menuBar.getStyleClass().add("menubar");
+        menuBar.getStyleClass().add("menubar");
 
-    	Menu fileMenu = new Menu("File");
+        Menu fileMenu = new Menu("File");
 
         addMenuItem(fileMenu, "Load from file", () -> {
             System.out.println("Load from file");
@@ -353,6 +392,11 @@ public class App extends Application
 
         Menu gameModeMenu = new Menu("Game Mode");
         addMenuItem(gameModeMenu, "Play Against Human", () -> {
+            playAgainstAI = false;
+            drawInitialBoard();
+        });
+        addMenuItem(gameModeMenu, "Play Against AI", () -> {
+            playAgainstAI = true;
             drawInitialBoard();
         });
 
@@ -361,15 +405,13 @@ public class App extends Application
         return menuBar;
     }
 
-    private void addMenuItem(Menu menu, String name, Runnable action)
-    {
+    private void addMenuItem(Menu menu, String name, Runnable action) {
         MenuItem menuItem = new MenuItem(name);
         menuItem.setOnAction(event -> action.run());
         menu.getItems().add(menuItem);
     }
 
-    private void showAlert(String title, String message)
-    {
+    private void showAlert(String title, String message) {
         Alert alert = new Alert(AlertType.INFORMATION);
         alert.setTitle(title);
         alert.setHeaderText(null);
@@ -377,8 +419,7 @@ public class App extends Application
         alert.showAndWait();
     }
 
-    public static void main(String[] args) 
-    {
+    public static void main(String[] args) {
         launch(args);
     }
 }
