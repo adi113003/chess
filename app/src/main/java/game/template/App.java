@@ -396,6 +396,15 @@ public class App extends Application {
                 .filter(child -> child instanceof ImageView).findFirst().orElse(null);
 
         if (piece != null) {
+            // Capture logic: remove the piece at the destination if it belongs to the opponent
+            if (grid[toRow][toCol].getChildren().stream().anyMatch(child -> child instanceof ImageView)) {
+                ImageView capturedPiece = (ImageView) grid[toRow][toCol].getChildren().stream()
+                        .filter(child -> child instanceof ImageView).findFirst().orElse(null);
+                if (capturedPiece != null && isEnemyPiece(toRow, toCol, currentPlayer)) {
+                    grid[toRow][toCol].getChildren().remove(capturedPiece);
+                }
+            }
+
             grid[toRow][toCol].getChildren().add(piece);
             grid[fromRow][fromCol].getChildren().remove(piece);
             moveStack.push(new Move(fromRow, fromCol, toRow, toCol, piece)); // Save the move to the stack
