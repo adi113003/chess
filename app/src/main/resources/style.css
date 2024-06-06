@@ -76,6 +76,11 @@
     -fx-background-color: rgb(238, 148, 148);
 }
 
+.highlight {
+    -fx-fill: rgba(0, 255, 0, 0.5);
+}
+
+
 
 .grid-pane .right-border {
     -fx-border-color: black;
